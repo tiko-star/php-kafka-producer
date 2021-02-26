@@ -28,7 +28,7 @@ $container->set('upload_directory', __DIR__.'/uploads');
 $container->set(EntityManager::class, function () : EntityManager {
     $config = Setup::createAnnotationMetadataConfiguration(
         [__DIR__.'/../src/Entity'],
-        true
+        false
     );
 
     $config->setMetadataDriverImpl(
