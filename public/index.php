@@ -47,11 +47,11 @@ $container->set(EntityManager::class, function () : EntityManager {
     return EntityManager::create(
         [
             'driver'   => 'pdo_mysql',
-            'host'     => 'localhost',
+            'host'     => 'eu-cdbr-west-03.cleardb.net',
             'port'     => 3306,
-            'dbname'   => 'course',
-            'user'     => 'root',
-            'password' => 'babelino',
+            'dbname'   => 'heroku_3dc81bde600f800',
+            'user'     => 'bb6f56bccdba46',
+            'password' => '471f50f3',
         ],
         $config
     );
