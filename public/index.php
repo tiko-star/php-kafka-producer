@@ -10,6 +10,7 @@ use Doctrine\Common\Cache\FilesystemCache;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\Mapping\Driver\AnnotationDriver;
 use Doctrine\ORM\Tools\Setup;
+use Symfony\Component\Dotenv\Dotenv;
 
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -18,6 +19,9 @@ use Slim\Factory\AppFactory;
 use Slim\Routing\RouteCollectorProxy;
 
 require __DIR__.'/../vendor/autoload.php';
+
+// Load environment variables
+(new Dotenv())->load(__DIR__.'/../.env');
 
 // Create Container using PHP-DI
 $containerBuilder = new ContainerBuilder();
@@ -46,12 +50,7 @@ $container->set(EntityManager::class, function () : EntityManager {
 
     return EntityManager::create(
         [
-            'driver'   => 'pdo_mysql',
-            'host'     => 'eu-cdbr-west-03.cleardb.net',
-            'port'     => 3306,
-            'dbname'   => 'heroku_3dc81bde600f800',
-            'user'     => 'bb6f56bccdba46',
-            'password' => '471f50f3',
+            'url' => $_ENV['DATABASE_URL'],
         ],
         $config
     );

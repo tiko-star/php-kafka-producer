@@ -15,7 +15,8 @@
         "php-di/php-di": "^6.3",
         "doctrine/orm": "^2.8",
         "ext-json": "*",
-        "ext-simplexml": "*"
+        "ext-simplexml": "*",
+        "symfony/dotenv": "^5.2"
     },
     "require-dev": {
         "symfony/var-dumper": "^5.2"
