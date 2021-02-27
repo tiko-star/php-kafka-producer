@@ -21,7 +21,9 @@ use Slim\Routing\RouteCollectorProxy;
 require __DIR__.'/../vendor/autoload.php';
 
 // Load environment variables
-(new Dotenv())->load(__DIR__.'/../.env');
+if (is_readable($path = __DIR__.'/../.env')) {
+    (new Dotenv())->load($path);
+}
 
 // Create Container using PHP-DI
 $containerBuilder = new ContainerBuilder();
