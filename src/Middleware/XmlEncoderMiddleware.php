@@ -12,7 +12,7 @@ use SimpleXMLElement;
 
 use function json_decode;
 use function array_flip;
-use function array_walk_recursive;
+use function array_walk;
 
 class XmlEncoderMiddleware implements MiddlewareInterface
 {
@@ -34,10 +34,17 @@ class XmlEncoderMiddleware implements MiddlewareInterface
 
         if ($request->getHeader('Accept')[0] === 'application/xml') {
             $body = json_decode((string) $response->getBody(), true);
-            $body = array_flip($body);
             $xml = new SimpleXMLElement('<?xml version="1.0" encoding="UTF-8"?><root/>');
 
-            array_walk_recursive($body, [$xml, 'addChild']);
+            array_walk($body, function ($item, $key) use ($xml) {
+                if (is_array($item)) {
+                    $child = $xml->addChild('student');
+                    $item = array_flip($item);
+                    array_walk($item, [$child, 'addChild']);
+                } else {
+                    $xml->addChild($key, (string) $item);
+                }
+            });
 
             $response->getBody()->rewind();
             $response->getBody()->write($xml->asXML());
