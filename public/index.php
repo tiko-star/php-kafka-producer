@@ -220,7 +220,7 @@ function validate(array $data) : void
 
     $validator->addRule(v::key('age', v::allOf(
         v::notEmpty()->setTemplate('The age must not be empty'),
-        v::type('int')->setTemplate('The age must be an integer')
+        v::number()->setTemplate('The age must be an integer')
     ))->setTemplate('The key \'age\' is required'));
 
     $validator->assert($data);
