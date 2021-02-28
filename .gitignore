@@ -2,4 +2,3 @@
 vendor/
 var/
 .env
-public/uploads
