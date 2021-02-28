@@ -3,6 +3,7 @@
 declare(strict_types = 1);
 
 use App\Entity\Student;
+use App\Middleware\RespectValidationMiddleware;
 use App\Middleware\XmlEncoderMiddleware;
 use DI\ContainerBuilder;
 use Doctrine\Common\Annotations\AnnotationReader;
@@ -10,6 +11,7 @@ use Doctrine\Common\Cache\FilesystemCache;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\Mapping\Driver\AnnotationDriver;
 use Doctrine\ORM\Tools\Setup;
+use Slim\Psr7\Factory\ResponseFactory;
 use Symfony\Component\Dotenv\Dotenv;
 
 use Psr\Http\Message\ResponseInterface as Response;
@@ -17,6 +19,8 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Http\Message\UploadedFileInterface;
 use Slim\Factory\AppFactory;
 use Slim\Routing\RouteCollectorProxy;
+
+use Respect\Validation\Validator as v;
 
 require __DIR__.'/../vendor/autoload.php';
 
@@ -27,6 +31,9 @@ if (is_readable($path = __DIR__.'/../.env')) {
 
 // Create Container using PHP-DI
 $containerBuilder = new ContainerBuilder();
+
+$containerBuilder->useAutowiring(false);
+$containerBuilder->useAnnotations(false);
 $container = $containerBuilder->build();
 
 $container->set('upload_directory', __DIR__.'/uploads');
@@ -58,6 +65,10 @@ $container->set(EntityManager::class, function () : EntityManager {
     );
 });
 
+$container->set(RespectValidationMiddleware::class, function () {
+    return new RespectValidationMiddleware(new ResponseFactory());
+});
+
 // Set container to create App with on AppFactory
 AppFactory::setContainer($container);
 
@@ -75,6 +86,8 @@ $app->addRoutingMiddleware();
 
 // Parse json, form data and xml
 $app->addBodyParsingMiddleware();
+
+$app->add(RespectValidationMiddleware::class);
 
 /**
  * Add Error Handling Middleware
@@ -113,6 +126,7 @@ $app->group('/api', function (RouteCollectorProxy $proxy) {
 
     $proxy->post('/students', function (Request $request, Response $response) {
         $params = (array) $request->getParsedBody();
+        validate($params);
 
         $student = new Student();
         $student->setName($params['name']);
@@ -141,6 +155,8 @@ $app->group('/api', function (RouteCollectorProxy $proxy) {
         }
 
         $params = (array) $request->getParsedBody();
+        validate($params);
+
         $student->setName($params['name']);
         $student->setEmail($params['email']);
         $student->setAge((int) $params['age']);
@@ -183,6 +199,41 @@ $app->post('/media/upload', function (Request $request, Response $response) {
     return json($data, $response);
 });
 
+/**
+ * Validate given data.
+ *
+ * @param array $data
+ */
+function validate(array $data) : void
+{
+    $validator = new v();
+
+    $validator->addRule(v::key('name', v::allOf(
+        v::notEmpty()->setTemplate('The name must not be empty'),
+        v::length(3, 24)->setTemplate('Invalid length')
+    ))->setTemplate('The key \'name\' is required'));
+
+    $validator->addRule(v::key('email', v::allOf(
+        v::notEmpty()->setTemplate('The email must not be empty'),
+        v::email()->setTemplate('Invalid email address')
+    ))->setTemplate('The key \'email\' is required'));
+
+    $validator->addRule(v::key('age', v::allOf(
+        v::notEmpty()->setTemplate('The age must not be empty'),
+        v::type('int')->setTemplate('The age must be an integer')
+    ))->setTemplate('The key \'age\' is required'));
+
+    $validator->assert($data);
+}
+
+/**
+ * Return JSON response.
+ *
+ * @param mixed                               $data
+ * @param \Psr\Http\Message\ResponseInterface $response
+ *
+ * @return \Psr\Http\Message\ResponseInterface
+ */
 function json($data, Response $response) : Response
 {
     $response->getBody()->write(json_encode($data));
