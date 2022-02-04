@@ -2,15 +2,27 @@
 
 declare(strict_types = 1);
 
+use App\Command\ProduceRecordCommand;
 use App\Entity\Student;
+use App\Event\StudentCreatedEvent;
+use App\Event\StudentDeletedEvent;
+use App\Event\StudentUpdatedEvent;
+use App\Handler\ProduceRecordHandler;
 use App\Middleware\RespectValidationMiddleware;
 use App\Middleware\XmlEncoderMiddleware;
+use App\Subscriber\StudentSubscriber;
+use DI\Container;
 use DI\ContainerBuilder;
 use Doctrine\Common\Annotations\AnnotationReader;
 use Doctrine\Common\Cache\FilesystemCache;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\Mapping\Driver\AnnotationDriver;
 use Doctrine\ORM\Tools\Setup;
+use League\Tactician\CommandBus;
+use League\Tactician\Handler\CommandHandlerMiddleware;
+use League\Tactician\Handler\CommandNameExtractor\ClassNameExtractor;
+use League\Tactician\Handler\Locator\InMemoryLocator;
+use League\Tactician\Handler\MethodNameInflector\HandleClassNameInflector;
 use Slim\Psr7\Factory\ResponseFactory;
 use Symfony\Component\Dotenv\Dotenv;
 
@@ -21,6 +33,11 @@ use Slim\Factory\AppFactory;
 use Slim\Routing\RouteCollectorProxy;
 
 use Respect\Validation\Validator as v;
+
+use Symfony\Component\EventDispatcher\EventDispatcher;
+
+use RdKafka\Producer;
+use RdKafka\Conf;
 
 require __DIR__.'/../vendor/autoload.php';
 
@@ -69,7 +86,40 @@ $container->set(RespectValidationMiddleware::class, function () {
     return new RespectValidationMiddleware(new ResponseFactory());
 });
 
-// Set container to create App with on AppFactory
+$container->set(EventDispatcher::class, function (Container $container) {
+    $dispatcher = new EventDispatcher();
+
+    $dispatcher->addSubscriber(
+        new StudentSubscriber($container->get(CommandBus::class))
+    );
+
+    return $dispatcher;
+});
+
+$container->set(Producer::class, function () {
+    $conf = new Conf();
+    $conf->set('metadata.broker.list', 'localhost:9092');
+    $conf->set('enable.idempotence', 'true');
+    $conf->set('compression.type', 'snappy');
+
+    return new Producer($conf);
+});
+
+$container->set(CommandBus::class, function (Container $container) {
+    $locator = new InMemoryLocator();
+
+    $locator->addHandler(new ProduceRecordHandler($container->get(Producer::class)), ProduceRecordCommand::class);
+
+    $commandHandlerMiddleware = new CommandHandlerMiddleware(
+        new ClassNameExtractor(),
+        $locator,
+        new HandleClassNameInflector()
+    );
+
+    return new CommandBus([$commandHandlerMiddleware]);
+});
+
+// Set container to create App with an AppFactory
 AppFactory::setContainer($container);
 
 /**
@@ -138,12 +188,19 @@ $app->group('/api', function (RouteCollectorProxy $proxy) {
         $em->persist($student);
         $em->flush();
 
+        /** @var EventDispatcher $dispatcher */
+        $dispatcher = $this->get(EventDispatcher::class);
+        $event = new StudentCreatedEvent($student);
+
+        $dispatcher->dispatch($event, StudentCreatedEvent::NAME);
+
         return json($student, $response)->withStatus(201);
     });
 
     $proxy->patch('/students/{id}', function (Request $request, Response $response, array $args) {
         /** @var EntityManager $em */
         $em = $this->get(EntityManager::class);
+        /** @var Student $student */
         $student = $em->getRepository(Student::class)->find($args['id']);
 
         if ($student === null) {
@@ -163,20 +220,33 @@ $app->group('/api', function (RouteCollectorProxy $proxy) {
 
         $em->flush();
 
+        /** @var EventDispatcher $dispatcher */
+        $dispatcher = $this->get(EventDispatcher::class);
+        $event = new StudentUpdatedEvent($student);
+
+        $dispatcher->dispatch($event, StudentUpdatedEvent::NAME);
+
         return json($student, $response);
     });
 
     $proxy->delete('/students/{id}', function (Request $request, Response $response, array $args) {
         /** @var EntityManager $em */
         $em = $this->get(EntityManager::class);
+        /** @var Student $student */
         $student = $em->getRepository(Student::class)->find($args['id']);
 
         if ($student === null) {
             return json(['message' => 'not found'], $response)->withStatus(404);
         }
 
+        $event = new StudentDeletedEvent($student, $student->getId());
+
         $em->remove($student);
         $em->flush();
+
+        /** @var EventDispatcher $dispatcher */
+        $dispatcher = $this->get(EventDispatcher::class);
+        $dispatcher->dispatch($event, StudentDeletedEvent::NAME);
 
         return $response->withHeader('Content-Type', 'application/json')->withStatus(204);
     });
